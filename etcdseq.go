@@ -11,10 +11,11 @@ import (
 
 const TimeToLive = 10
 const indexInvalid = -1
+const countInvalid = 0
 
 var DefaultInfo = Info{
 	Index: indexInvalid,
-	Count: 0,
+	Count: countInvalid,
 }
 
 type EtcdSeqOption func(client *EtcdSeq)
@@ -35,11 +36,11 @@ func (i Info) String() string {
 
 func (i *Info) Reset() {
 	i.Index = indexInvalid
-	i.Count = 0
+	i.Count = countInvalid
 }
 
 func (i Info) Invalid() bool {
-	return i.Index == indexInvalid
+	return i.Index == indexInvalid || i.Count == countInvalid
 }
 
 func (i Info) Equal(other Info) bool {
