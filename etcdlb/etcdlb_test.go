@@ -104,3 +104,49 @@ func TestEtcdlb2(t *testing.T) {
 		}
 	}
 }
+
+func TestEtcdClientError(t *testing.T) {
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints: []string{"http://localhost:2379"},
+	})
+	assert.NoError(t, err)
+	etcdClient.Close()
+
+	key := "test_key"
+	handler := &testHandler{name: "lb1", t: t}
+	lb := etcdlb.NewEtcdLB(etcdClient, key, handler)
+	err = lb.Start()
+	assert.Error(t, err)
+	t.Logf("error: %v", err)
+}
+
+type mockLogger struct {
+	t      *testing.T
+	called bool
+}
+
+func (l *mockLogger) Errorf(format string, args ...interface{}) {
+	l.t.Helper()
+	l.t.Logf("[ERROR] "+format, args...)
+	l.called = true
+}
+
+func TestEtcdClientClose(t *testing.T) {
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints: []string{"http://localhost:2379"},
+	})
+	assert.NoError(t, err)
+
+	key := "test_key"
+	logger := mockLogger{t: t}
+	handler := &testHandler{name: "lb1", t: t}
+	lb := etcdlb.NewEtcdLB(etcdClient, key, handler, etcdlb.WithLogger(&logger))
+	err = lb.Start()
+	assert.NoError(t, err)
+
+	etcdClient.Close()
+	time.Sleep(time.Second)
+	assert.True(t, logger.called)
+	lb.Stop()
+	time.Sleep(time.Second)
+}

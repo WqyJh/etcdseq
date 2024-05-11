@@ -106,11 +106,11 @@ func (l *EtcdLB) doKeepAlive() error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	for {
 		select {
 		case <-l.quit.Done():
 			return nil
-		default:
+		case <-ticker.C:
 			err := l.doRegister()
 			if err != nil {
 				l.logger.Errorf("doRegister: %+v", err)
@@ -125,8 +125,6 @@ func (l *EtcdLB) doKeepAlive() error {
 			return nil
 		}
 	}
-
-	return nil
 }
 
 func (l *EtcdLB) keepAliveAsync() error {
