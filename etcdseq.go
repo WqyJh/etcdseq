@@ -38,8 +38,15 @@ func (i *Info) Reset() {
 	i.Count = 0
 }
 
-func (i *Info) Invalid() bool {
+func (i Info) Invalid() bool {
 	return i.Index == indexInvalid
+}
+
+func (i Info) Equal(other Info) bool {
+	if i.Invalid() {
+		return other.Invalid()
+	}
+	return i.Index == other.Index && i.Count == other.Count
 }
 
 type Handler interface {
