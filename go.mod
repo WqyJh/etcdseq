@@ -1,4 +1,4 @@
-module github.com/WqyJh/etcdlb
+module github.com/WqyJh/etcdseq
 
 go 1.22.1
 

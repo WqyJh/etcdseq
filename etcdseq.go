@@ -1,4 +1,4 @@
-package etcdlb
+package etcdseq
 
 import (
 	"errors"
@@ -17,7 +17,7 @@ var DefaultInfo = Info{
 	Count: 0,
 }
 
-type EtcdLBOption func(client *EtcdLB)
+type EtcdSeqOption func(client *EtcdSeq)
 
 type Info struct {
 	Index int
@@ -47,7 +47,7 @@ type Handler interface {
 	OnRevoke()
 }
 
-type EtcdLB struct {
+type EtcdSeq struct {
 	client    *clientv3.Client
 	key       string
 	keyPrefix string
@@ -62,8 +62,8 @@ type EtcdLB struct {
 	wg      sync.WaitGroup
 }
 
-func NewEtcdLB(client *clientv3.Client, key string, handler Handler, opts ...EtcdLBOption) *EtcdLB {
-	l := &EtcdLB{
+func NewEtcdSeq(client *clientv3.Client, key string, handler Handler, opts ...EtcdSeqOption) *EtcdSeq {
+	l := &EtcdSeq{
 		client:    client,
 		key:       key,
 		value:     key,
@@ -79,7 +79,7 @@ func NewEtcdLB(client *clientv3.Client, key string, handler Handler, opts ...Etc
 	return l
 }
 
-func (l *EtcdLB) Start() error {
+func (l *EtcdSeq) Start() error {
 	err := l.doRegister()
 	if err != nil {
 		return fmt.Errorf("doRegister: %w", err)
@@ -92,23 +92,24 @@ func (l *EtcdLB) Start() error {
 	return nil
 }
 
-func (l *EtcdLB) Stop() {
+func (l *EtcdSeq) Stop() {
 	l.quit.Close()
 	l.wg.Wait()
 }
 
-func (l *EtcdLB) reset() {
+func (l *EtcdSeq) reset() {
 	l.info.Reset()
 	l.lease = clientv3.NoLease
 }
 
-func (l *EtcdLB) doKeepAlive() error {
+func (l *EtcdSeq) doKeepAlive() error {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-l.quit.Done():
+			l.logger.Errorf("doKeepAlive quit")
 			return nil
 		case <-ticker.C:
 			err := l.doRegister()
@@ -127,7 +128,7 @@ func (l *EtcdLB) doKeepAlive() error {
 	}
 }
 
-func (l *EtcdLB) keepAliveAsync() error {
+func (l *EtcdSeq) keepAliveAsync() error {
 	ch, err := l.client.KeepAlive(l.client.Ctx(), l.lease)
 	if err != nil {
 		return fmt.Errorf("etcd KeepAlive: %w", err)
@@ -146,6 +147,7 @@ func (l *EtcdLB) keepAliveAsync() error {
 				}
 			case <-l.quit.Done():
 				l.doRevoke()
+				l.logger.Errorf("keepAliveAsync quit")
 				return
 			}
 		}
@@ -154,7 +156,7 @@ func (l *EtcdLB) keepAliveAsync() error {
 	return nil
 }
 
-func (l *EtcdLB) watchAsync() {
+func (l *EtcdSeq) watchAsync() {
 	l.goSafe(func() {
 		if err := l.watch(); err != nil {
 			l.logger.Errorf("etcd publisher watch: %+v", err)
@@ -162,7 +164,7 @@ func (l *EtcdLB) watchAsync() {
 	})
 }
 
-func (l *EtcdLB) doRegister() (err error) {
+func (l *EtcdSeq) doRegister() (err error) {
 	l.lease, err = l.register()
 	if err != nil {
 		return fmt.Errorf("etcd register: %w", err)
@@ -170,7 +172,7 @@ func (l *EtcdLB) doRegister() (err error) {
 	return l.handleInfoChange()
 }
 
-func (l *EtcdLB) register() (clientv3.LeaseID, error) {
+func (l *EtcdSeq) register() (clientv3.LeaseID, error) {
 	resp, err := l.client.Grant(l.client.Ctx(), TimeToLive)
 	if err != nil {
 		return clientv3.NoLease, fmt.Errorf("etcd grant: %w", err)
@@ -187,18 +189,17 @@ func (l *EtcdLB) register() (clientv3.LeaseID, error) {
 	return lease, err
 }
 
-func (l *EtcdLB) doRevoke() error {
+func (l *EtcdSeq) doRevoke() {
 	err := l.revoke()
 	if err != nil {
 		l.logger.Errorf("revoke: %+v", err)
-		return err
+		return
 	}
 	l.handler.OnRevoke()
 	l.reset()
-	return nil
 }
 
-func (l *EtcdLB) revoke() error {
+func (l *EtcdSeq) revoke() error {
 	_, err := l.client.Revoke(l.client.Ctx(), l.lease)
 	if err != nil {
 		l.logger.Errorf("etcd Revoke: %+v", err)
@@ -206,7 +207,7 @@ func (l *EtcdLB) revoke() error {
 	return err
 }
 
-func (l *EtcdLB) load() (info Info, err error) {
+func (l *EtcdSeq) load() (info Info, err error) {
 	resp, err := l.client.Get(l.client.Ctx(), l.key, clientv3.WithPrefix())
 	if err != nil {
 		return
@@ -236,7 +237,7 @@ func makeKeyPrefix(key string) string {
 	return key + "/"
 }
 
-func (l *EtcdLB) watch() error {
+func (l *EtcdSeq) watch() error {
 	var rch clientv3.WatchChan
 	rev := l.info.revision
 	if rev == 0 {
@@ -248,6 +249,7 @@ func (l *EtcdLB) watch() error {
 	for {
 		select {
 		case <-l.quit.Done():
+			l.logger.Errorf("watch quit")
 			return nil
 		case resp, ok := <-rch:
 			if !ok {
@@ -267,7 +269,7 @@ func (l *EtcdLB) watch() error {
 	}
 }
 
-func (l *EtcdLB) handleInfoChange() error {
+func (l *EtcdSeq) handleInfoChange() error {
 	info, err := l.load()
 	if err != nil {
 		return fmt.Errorf("load: %w", err)
@@ -279,8 +281,8 @@ func (l *EtcdLB) handleInfoChange() error {
 	return nil
 }
 
-func WithLogger(logger Logger) EtcdLBOption {
-	return func(client *EtcdLB) {
+func WithLogger(logger Logger) EtcdSeqOption {
+	return func(client *EtcdSeq) {
 		client.logger = logger
 	}
 }

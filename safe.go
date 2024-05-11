@@ -1,8 +1,8 @@
-package etcdlb
+package etcdseq
 
 import "runtime/debug"
 
-func (l *EtcdLB) runSafe(fn func()) {
+func (l *EtcdSeq) runSafe(fn func()) {
 	if p := recover(); p != nil {
 		l.logger.Errorf("%+v\n%s", p, debug.Stack())
 	}
@@ -10,7 +10,7 @@ func (l *EtcdLB) runSafe(fn func()) {
 	fn()
 }
 
-func (l *EtcdLB) goSafe(fn func()) {
+func (l *EtcdSeq) goSafe(fn func()) {
 	l.wg.Add(1)
 	go l.runSafe(func() {
 		defer l.wg.Done()
