@@ -22,12 +22,6 @@ func (h *testHandler) OnChange(info etcdseq.Info) {
 	h.info = info
 }
 
-func (h *testHandler) OnRevoke() {
-	h.t.Helper()
-	h.t.Logf("%s revoke", h.name)
-	h.info.Reset()
-}
-
 func TestEtcdseq(t *testing.T) {
 	etcdClient, err := clientv3.New(clientv3.Config{
 		Endpoints: []string{"http://localhost:2379"},

@@ -44,7 +44,6 @@ func (i *Info) Invalid() bool {
 
 type Handler interface {
 	OnChange(info Info)
-	OnRevoke()
 }
 
 type EtcdSeq struct {
@@ -195,8 +194,8 @@ func (l *EtcdSeq) doRevoke() {
 		l.logger.Errorf("revoke: %+v", err)
 		return
 	}
-	l.handler.OnRevoke()
 	l.reset()
+	l.handler.OnChange(l.info)
 }
 
 func (l *EtcdSeq) revoke() error {
