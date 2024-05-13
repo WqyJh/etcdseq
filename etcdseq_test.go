@@ -120,6 +120,16 @@ type mockLogger struct {
 	called bool
 }
 
+func (l *mockLogger) Debugf(format string, args ...interface{}) {
+	l.t.Helper()
+	l.t.Logf("[DEBUG] "+format, args...)
+}
+
+func (l *mockLogger) Infof(format string, args ...interface{}) {
+	l.t.Helper()
+	l.t.Logf("[INFO] "+format, args...)
+}
+
 func (l *mockLogger) Errorf(format string, args ...interface{}) {
 	l.t.Helper()
 	l.t.Logf("[ERROR] "+format, args...)
@@ -151,4 +161,47 @@ func TestEtcdClientClose(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	etcdClient.Delete(etcdClient.Ctx(), key, clientv3.WithPrefix())
+}
+
+func TestEtcdseqChan(t *testing.T) {
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints: []string{"http://localhost:2379"},
+	})
+	assert.NoError(t, err)
+	defer etcdClient.Close()
+
+	key := "test_key_5"
+
+	ch1 := make(chan etcdseq.Info, 100)
+	seq := etcdseq.NewEtcdSeq(etcdClient, key, etcdseq.NewChanHandler(ch1))
+	err = seq.Start()
+	assert.NoError(t, err)
+	info := <-ch1
+	assert.Equal(t, 0, info.Index)
+	assert.Equal(t, 1, info.Count)
+
+	ch2 := make(chan etcdseq.Info, 100)
+	seq2 := etcdseq.NewEtcdSeq(etcdClient, key, etcdseq.NewChanHandler(ch2))
+	err = seq2.Start()
+	assert.NoError(t, err)
+	time.Sleep(time.Millisecond)
+	info = <-ch1
+	assert.Equal(t, 0, info.Index)
+	assert.Equal(t, 2, info.Count)
+	info = <-ch2
+	assert.Equal(t, 1, info.Index)
+	assert.Equal(t, 2, info.Count)
+
+	seq.Stop()
+	time.Sleep(time.Millisecond)
+	info = <-ch1
+	assert.True(t, info.Invalid())
+	info = <-ch2
+	assert.Equal(t, 0, info.Index)
+	assert.Equal(t, 1, info.Count)
+
+	seq2.Stop()
+	time.Sleep(time.Millisecond)
+	info = <-ch2
+	assert.True(t, info.Invalid())
 }

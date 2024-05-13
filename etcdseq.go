@@ -176,6 +176,7 @@ func (l *EtcdSeq) doRegister() (err error) {
 	if err != nil {
 		return fmt.Errorf("etcd register: %w", err)
 	}
+	l.logger.Debugf("registerred: %s", l.fullKey)
 	return l.handleInfoChange()
 }
 
@@ -268,6 +269,7 @@ func (l *EtcdSeq) watch() error {
 			if resp.Err() != nil {
 				return fmt.Errorf("etcd watch chan has error, error: %w", resp.Err())
 			}
+			l.logger.Debugf("watch event")
 			err := l.handleInfoChange()
 			if err != nil {
 				return fmt.Errorf("etcd handleInfoChange: %w", err)
@@ -281,9 +283,12 @@ func (l *EtcdSeq) handleInfoChange() error {
 	if err != nil {
 		return fmt.Errorf("load: %w", err)
 	}
+	l.logger.Debugf("loaded: %+v", info)
 	if l.info.Index != info.Index || l.info.Count != info.Count {
+		l.logger.Debugf("info changed: %+v", info)
 		l.handler.OnChange(info)
 		l.info = info
+		l.logger.Debugf("info updated: %+v", l.info)
 	}
 	return nil
 }

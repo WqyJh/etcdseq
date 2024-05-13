@@ -4,7 +4,7 @@ type ChanHandler struct {
 	ch chan<- Info
 }
 
-func NewChanHandler(ch chan Info) *ChanHandler {
+func NewChanHandler(ch chan<- Info) *ChanHandler {
 	return &ChanHandler{
 		ch: ch,
 	}
