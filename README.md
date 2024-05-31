@@ -1,4 +1,4 @@
-# etcdseq
+# etcdseq [![GoDoc][doc-img]][doc]
 
 Etcdseq is an lightweight library to support sequence nodes via etcd.
 
@@ -93,3 +93,10 @@ func run(ctx context.Context) {
 	}
 }
 ```
+
+## License
+
+Released under the [MIT License](LICENSE).
+
+[doc-img]: https://godoc.org/github.com/WqyJh/etcdseq?status.svg
+[doc]: https://godoc.org/github.com/WqyJh/etcdseq
