@@ -116,7 +116,7 @@ func (l *EtcdSeq) doKeepAlive() error {
 	for {
 		select {
 		case <-l.quit.Done():
-			l.logger.Errorf("doKeepAlive quit")
+			l.logger.Infof("doKeepAlive quit")
 			return nil
 		case <-ticker.C:
 			err := l.doRegister()
@@ -154,7 +154,7 @@ func (l *EtcdSeq) keepAliveAsync() error {
 				}
 			case <-l.quit.Done():
 				l.doRevoke()
-				l.logger.Errorf("keepAliveAsync quit")
+				l.logger.Infof("keepAliveAsync quit")
 				return
 			}
 		}
@@ -257,7 +257,7 @@ func (l *EtcdSeq) watch() error {
 	for {
 		select {
 		case <-l.quit.Done():
-			l.logger.Errorf("watch quit")
+			l.logger.Infof("watch quit")
 			return nil
 		case resp, ok := <-rch:
 			if !ok {
