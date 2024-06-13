@@ -9,11 +9,3 @@ func (l *EtcdSeq) runSafe(fn func()) {
 
 	fn()
 }
-
-func (l *EtcdSeq) goSafe(fn func()) {
-	l.wg.Add(1)
-	go l.runSafe(func() {
-		defer l.wg.Done()
-		fn()
-	})
-}

@@ -1,12 +1,14 @@
 package etcdseq
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/client/v3/concurrency"
 )
 
 const TimeToLive = 10
@@ -61,12 +63,14 @@ type EtcdSeq struct {
 	value     string
 	handler   Handler
 	quit      *DoneChan
+	quitWatch *DoneChan
 	logger    Logger
 
 	fullKey string
 	info    Info
 	lease   clientv3.LeaseID
 	wg      sync.WaitGroup
+	wgWatch sync.WaitGroup
 }
 
 func NewEtcdSeq(client *clientv3.Client, key string, handler Handler, opts ...EtcdSeqOption) *EtcdSeq {
@@ -77,6 +81,7 @@ func NewEtcdSeq(client *clientv3.Client, key string, handler Handler, opts ...Et
 		keyPrefix: makeKeyPrefix(key),
 		handler:   handler,
 		quit:      NewDoneChan(),
+		quitWatch: NewDoneChan(),
 		logger:    stdLogger{},
 	}
 	l.reset()
@@ -100,6 +105,8 @@ func (l *EtcdSeq) Start() error {
 }
 
 func (l *EtcdSeq) Stop() {
+	l.quitWatch.Close()
+	l.wgWatch.Wait()
 	l.quit.Close()
 	l.wg.Wait()
 }
@@ -141,7 +148,10 @@ func (l *EtcdSeq) keepAliveAsync() error {
 		return fmt.Errorf("etcd KeepAlive: %w", err)
 	}
 
-	l.goSafe(func() {
+	l.wg.Add(1)
+	go l.runSafe(func() {
+		defer l.wg.Done()
+
 		for {
 			select {
 			case _, ok := <-ch:
@@ -164,7 +174,10 @@ func (l *EtcdSeq) keepAliveAsync() error {
 }
 
 func (l *EtcdSeq) watchAsync() {
-	l.goSafe(func() {
+	l.wgWatch.Add(1)
+	go l.runSafe(func() {
+		defer l.wgWatch.Done()
+
 		if err := l.watch(); err != nil {
 			l.logger.Errorf("etcd publisher watch: %+v", err)
 		}
@@ -172,10 +185,11 @@ func (l *EtcdSeq) watchAsync() {
 }
 
 func (l *EtcdSeq) doRegister() (err error) {
-	l.lease, err = l.register()
+	lease, err := l.register()
 	if err != nil {
 		return fmt.Errorf("etcd register: %w", err)
 	}
+	l.lease = lease
 	l.logger.Debugf("registerred: %s", l.fullKey)
 	return l.handleInfoChange()
 }
@@ -238,11 +252,15 @@ func (l *EtcdSeq) load() (info Info, err error) {
 }
 
 func makeEtcdKey(key string, id int64) string {
-	return fmt.Sprintf("%s/%d", key, id)
+	return fmt.Sprintf("%s/seat/%d", key, id)
 }
 
 func makeKeyPrefix(key string) string {
-	return key + "/"
+	return key + "/seat/"
+}
+
+func makeLockKey(key string, index int) string {
+	return fmt.Sprintf("%s/lk/%d", key, index)
 }
 
 func (l *EtcdSeq) watch() error {
@@ -256,7 +274,7 @@ func (l *EtcdSeq) watch() error {
 
 	for {
 		select {
-		case <-l.quit.Done():
+		case <-l.quitWatch.Done():
 			l.logger.Infof("watch quit")
 			return nil
 		case resp, ok := <-rch:
@@ -285,12 +303,26 @@ func (l *EtcdSeq) handleInfoChange() error {
 	}
 	l.logger.Debugf("loaded: %+v", info)
 	if l.info.Index != info.Index || l.info.Count != info.Count {
-		l.logger.Debugf("info changed: %+v", info)
+		l.logger.Debugf("info changed from: %+v to %+v", l.info, info)
 		l.handler.OnChange(info)
 		l.info = info
-		l.logger.Debugf("info updated: %+v", l.info)
 	}
 	return nil
+}
+
+type Unlocker func(ctx context.Context) error
+
+func (l *EtcdSeq) Lock(ctx context.Context, info Info) (Unlocker, error) {
+	s, err := concurrency.NewSession(l.client)
+	if err != nil {
+		return nil, fmt.Errorf("etcd NewSession: %w", err)
+	}
+	m := concurrency.NewMutex(s, makeLockKey(l.key, info.Index))
+	err = m.Lock(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("etcd Lock: %w", err)
+	}
+	return m.Unlock, nil
 }
 
 func WithLogger(logger Logger) EtcdSeqOption {
